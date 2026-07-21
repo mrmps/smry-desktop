@@ -9,6 +9,9 @@ export const PAKE_CLI_VERSION = "3.15.1";
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceConfigPath = resolve(rootDir, "desktop/pake.json");
 const bunPackageManagerShimDir = resolve(rootDir, "scripts/pake-bin");
+const pakePackageRoot = resolve(rootDir, "node_modules/pake-cli");
+const patchedPakeDirectoryName = "pake-cli-source";
+const cargoTargetDir = resolve(rootDir, "dist/desktop-pake-target");
 
 export type DesktopPlatform = "auto" | "macos" | "windows" | "linux";
 type ResolvedDesktopPlatform = Exclude<DesktopPlatform, "auto">;
@@ -70,11 +73,15 @@ function resolvePlatform(platform: DesktopPlatform = "auto"): ResolvedDesktopPla
   return platform === "auto" ? getCurrentDesktopPlatform() : platform;
 }
 
-export function getPakeCommand(options: DesktopBuildOptions = {}, configPath = sourceConfigPath) {
+export function getPakeCommand(
+  options: DesktopBuildOptions = {},
+  configPath = sourceConfigPath,
+  pakeCliPath = resolve(pakePackageRoot, "dist/cli.js"),
+) {
   const platform = resolvePlatform(options.platform);
   return [
-    "bunx",
-    `pake-cli@${PAKE_CLI_VERSION}`,
+    "bun",
+    pakeCliPath,
     "--config",
     configPath,
     "--app-version",
@@ -104,6 +111,59 @@ async function writeResolvedConfig(destination: string) {
     ? source.inject.map((path) => resolve(rootDir, String(path)))
     : [];
   await writeFile(destination, `${JSON.stringify(source, null, 2)}\n`);
+}
+
+async function preparePakeSource(outputDir: string) {
+  const destination = resolve(outputDir, patchedPakeDirectoryName);
+  await cp(pakePackageRoot, destination, { dereference: true, recursive: true });
+
+  const windowSourcePath = resolve(destination, "src-tauri/src/app/window.rs");
+  const originalWindowSource = await readFile(windowSourcePath, "utf8");
+  const originalMacImport = "use tauri::TitleBarStyle;";
+  const originalTitleBarSetup = `        let title_bar_style = if window_config.hide_title_bar {
+            TitleBarStyle::Overlay
+        } else {
+            TitleBarStyle::Visible
+        };
+        window_builder = window_builder.title_bar_style(title_bar_style);`;
+
+  if (
+    !originalWindowSource.includes(originalMacImport) ||
+    !originalWindowSource.includes(originalTitleBarSetup)
+  ) {
+    throw new Error(
+      `Pake ${PAKE_CLI_VERSION} title-bar source changed; refusing to apply the SMRY native-shell patch`,
+    );
+  }
+
+  const patchedWindowSource = originalWindowSource.replace(
+    originalTitleBarSetup,
+    `        // The webview provides SMRY's own opaque title-bar canvas behind
+        // native macOS controls. Pake's hideTitleBar flag stays false so its
+        // broad immersive CSS is never injected into the product shell.
+        window_builder = window_builder.title_bar_style(TitleBarStyle::Overlay);`,
+  );
+  await writeFile(windowSourcePath, patchedWindowSource);
+
+  const cargoManifestPath = resolve(destination, "src-tauri/Cargo.toml");
+  const originalCargoManifest = await readFile(cargoManifestPath, "utf8");
+  const featuresHeader = "[features]\n";
+  if (!originalCargoManifest.includes(featuresHeader)) {
+    throw new Error(
+      `Pake ${PAKE_CLI_VERSION} Cargo features changed; refusing to apply the macOS proxy compatibility patch`,
+    );
+  }
+  const patchedCargoManifest = originalCargoManifest.includes(
+    'macos-proxy = ["tauri/macos-proxy"]',
+  )
+    ? originalCargoManifest
+    : originalCargoManifest.replace(
+        featuresHeader,
+        `${featuresHeader}macos-proxy = ["tauri/macos-proxy"]\n`,
+      );
+  await writeFile(cargoManifestPath, patchedCargoManifest);
+
+  return resolve(destination, "dist/cli.js");
 }
 
 async function copyOutput(output: PakeOutput, destination: string) {
@@ -159,8 +219,13 @@ async function runDesktopBuild(options: DesktopBuildOptions) {
   await rm(outputDir, { force: true, recursive: true });
   await mkdir(outputDir, { recursive: true });
   await writeResolvedConfig(resolvedConfigPath);
+  const pakeCliPath = await preparePakeSource(outputDir);
 
-  const command = getPakeCommand({ ...options, platform, targets }, resolvedConfigPath);
+  const command = getPakeCommand(
+    { ...options, platform, targets },
+    resolvedConfigPath,
+    pakeCliPath,
+  );
   const process = Bun.spawn(command, {
     cwd: outputDir,
     env: processEnv(),
@@ -198,6 +263,9 @@ function processEnv() {
     // narrow pnpm-compatible command delegates install/run to Bun so the SMRY
     // build remains Bun-only without modifying the third-party package.
     PATH: `${bunPackageManagerShimDir}${delimiter}${process.env.PATH ?? ""}`,
+    // Keep compiled Rust dependencies outside the disposable patched Pake
+    // source tree so local rebuilds and CI caches remain incremental.
+    CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR ?? cargoTargetDir,
     CI: "true",
     TAURI_BUNDLER_DMG_IGNORE_CI: process.env.TAURI_BUNDLER_DMG_IGNORE_CI ?? "true",
   };

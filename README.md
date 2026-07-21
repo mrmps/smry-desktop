@@ -37,3 +37,8 @@ header because Pake's generic header CSS can collide with Tailwind utility
 classes in the live app. A narrow bootstrap marks the webview as SMRY Desktop
 and resets Pake's persisted `htmlZoom` value to 100% on every page load so an
 accidental zoom cannot leave future launches compressed or clipped.
+
+On macOS, the wrapper keeps the native traffic-light controls above a reserved
+32px title-bar canvas painted with SMRY's live `--sidebar` design token. The
+bootstrap subtracts the same height from the app frame, so the title bar follows
+theme changes without overlapping or clipping product content.
