@@ -2,6 +2,7 @@
   "name": "smry-desktop",
   "private": true,
   "scripts": {
-    "desktop:build": "bun scripts/build-desktop-app.ts"
+    "desktop:build": "bun scripts/build-desktop-app.ts",
+    "test": "bun test"
   }
 }

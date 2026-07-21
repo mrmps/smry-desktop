@@ -100,6 +100,9 @@ function normalizeFormat(format: string) {
 async function writeResolvedConfig(destination: string) {
   const source = JSON.parse(await readFile(sourceConfigPath, "utf8")) as Record<string, unknown>;
   source.icon = resolve(rootDir, String(source.icon));
+  source.inject = Array.isArray(source.inject)
+    ? source.inject.map((path) => resolve(rootDir, String(path)))
+    : [];
   await writeFile(destination, `${JSON.stringify(source, null, 2)}\n`);
 }
 

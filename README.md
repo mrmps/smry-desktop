@@ -31,3 +31,9 @@ and replace the stable `desktop-latest` release assets.
 
 SMRY Desktop loads the live SMRY web app. Web features update with the site;
 native wrapper changes require downloading a newer installer.
+
+The shell uses the operating system title bar instead of Pake's immersive
+header because Pake's generic header CSS can collide with Tailwind utility
+classes in the live app. A narrow bootstrap marks the webview as SMRY Desktop
+and resets Pake's persisted `htmlZoom` value to 100% on every page load so an
+accidental zoom cannot leave future launches compressed or clipped.
