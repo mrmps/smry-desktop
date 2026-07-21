@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tw93/Pake/main/schema/pake.schema.json",
+  "url": "https://smry.ai/new",
+  "name": "SMRY",
+  "identifier": "ai.smry.desktop",
+  "title": "SMRY",
+  "icon": "public/brand/smry-logo-mark.png",
+  "width": 1280,
+  "height": 860,
+  "minWidth": 920,
+  "minHeight": 640,
+  "hideTitleBar": true,
+  "hideOnClose": false,
+  "internalUrlRegex": "^https://(www\\.)?smry\\.ai(/.*)?$",
+  "enableFind": true,
+  "newWindow": true,
+  "camera": false,
+  "microphone": false,
+  "ignoreCertificateErrors": false
+}

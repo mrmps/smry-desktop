@@ -1,0 +1,33 @@
+# SMRY Desktop
+
+The official lightweight desktop app for [smry.ai](https://smry.ai), packaged
+with [Pake](https://github.com/tw93/Pake) and the operating system webview.
+
+## Download
+
+Download the current early-access installers from the stable
+[SMRY Desktop release](https://github.com/mrmps/smry-desktop/releases/tag/desktop-latest):
+
+- macOS universal DMG
+- Windows x64 MSI
+- Linux x64 AppImage
+- Debian / Ubuntu x64 DEB
+
+These packages are not yet signed by a verified publisher or notarized, so the
+operating system may ask for confirmation before opening them.
+
+## Build
+
+The declarative Pake configuration lives at `desktop/pake.json`. Builds use
+Pake CLI 3.15.1 in structured JSON mode and fail if a requested output format
+is missing.
+
+```bash
+bun run desktop:build -- --platform macos --targets app --version 0.1.0
+```
+
+Pushes that change the packaging source build all supported operating systems
+and replace the stable `desktop-latest` release assets.
+
+SMRY Desktop loads the live SMRY web app. Web features update with the site;
+native wrapper changes require downloading a newer installer.

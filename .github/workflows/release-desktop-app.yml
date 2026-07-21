@@ -1,0 +1,187 @@
+name: Release SMRY Desktop
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - "public/brand/smry-logo-mark.png"
+      - "scripts/build-desktop-app.ts"
+      - "scripts/pake-bin/**"
+      - ".github/workflows/release-desktop-app.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Desktop app version. Defaults to 0.1.<run number>."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-app-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${REQUESTED_VERSION:-0.1.${GITHUB_RUN_NUMBER}}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid desktop version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS universal
+            platform: macos
+            runner: macos-latest
+            artifact: smry-desktop-macos
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - label: Windows x64
+            platform: windows
+            runner: windows-latest
+            artifact: smry-desktop-windows
+            rust_targets: ""
+          - label: Linux x64
+            platform: linux
+            runner: ubuntu-24.04
+            artifact: smry-desktop-linux
+            rust_targets: ""
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Install Rust
+        if: matrix.rust_targets == ''
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust with macOS targets
+        if: matrix.rust_targets != ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Pake dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.bun/install/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            dist/desktop/src-tauri/target
+          key: desktop-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('desktop/pake.json', 'scripts/build-desktop-app.ts', 'scripts/pake-bin/**') }}
+          restore-keys: desktop-${{ runner.os }}-${{ matrix.platform }}-
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Build installers with Pake
+        shell: bash
+        env:
+          DESKTOP_APP_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          bun run desktop:build -- \
+            --platform "${{ matrix.platform }}" \
+            --version "${{ needs.prepare.outputs.version }}"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/desktop-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish desktop release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: desktop-latest
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish stable release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/desktop-release.md"
+          cat > "$notes" <<EOF
+          # SMRY Desktop ${VERSION}
+
+          A lightweight desktop wrapper for [smry.ai](https://smry.ai), built with [Pake](https://github.com/tw93/Pake) and the operating system webview.
+
+          - macOS: \`SMRY-macOS-universal.dmg\`
+          - Windows: \`SMRY-Windows-x64.msi\`
+          - Linux: \`SMRY-Linux-x64.AppImage\` or \`SMRY-Linux-x64.deb\`
+
+          These early-access installers are not yet signed by a verified publisher or notarized, so the operating system may ask for confirmation before opening them. The web app updates automatically; install a newer package from this release when the native wrapper changes.
+
+          Built from [${GITHUB_SHA}](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}) with Pake CLI 3.15.1.
+          EOF
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "SMRY Desktop ${VERSION}" \
+              --notes-file "$notes"
+            gh release upload "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "SMRY Desktop ${VERSION}" \
+              --notes-file "$notes"
+          fi
