@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "releaseTag": "desktop-latest",
+  "artifacts": {
+    "dmg": "SMRY-macOS-universal.dmg",
+    "msi": "SMRY-Windows-x64.msi",
+    "appimage": "SMRY-Linux-x64.AppImage",
+    "deb": "SMRY-Linux-x64.deb"
+  }
+}

@@ -3,6 +3,10 @@
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  desktopReleaseManifest,
+  isRecord,
+} from "./desktop-release-manifest";
 
 export const PAKE_CLI_VERSION = "3.15.1";
 
@@ -16,13 +20,13 @@ const cargoTargetDir = resolve(rootDir, "dist/desktop-pake-target");
 export type DesktopPlatform = "auto" | "macos" | "windows" | "linux";
 type ResolvedDesktopPlatform = Exclude<DesktopPlatform, "auto">;
 
-type PakeOutput = {
+export type PakeOutput = {
   path: string;
   sizeBytes: number;
   format: string;
 };
 
-type PakeResult = {
+export type PakeResult = {
   ok: boolean;
   name: string;
   platform: string;
@@ -42,12 +46,11 @@ export type DesktopBuildOptions = {
 };
 
 export const desktopArtifactNames = {
-  dmg: "SMRY-macOS-universal.dmg",
+  ...desktopReleaseManifest.artifacts,
   app: "SMRY-macOS-Apple-Silicon.app",
-  msi: "SMRY-Windows-x64.msi",
-  deb: "SMRY-Linux-x64.deb",
-  appimage: "SMRY-Linux-x64.AppImage",
 } as const;
+
+type DesktopArtifactFormat = keyof typeof desktopArtifactNames;
 
 const defaultTargets: Record<ResolvedDesktopPlatform, string> = {
   macos: "universal",
@@ -73,12 +76,28 @@ function resolvePlatform(platform: DesktopPlatform = "auto"): ResolvedDesktopPla
   return platform === "auto" ? getCurrentDesktopPlatform() : platform;
 }
 
+function parseDesktopPlatform(value: string): DesktopPlatform {
+  switch (value) {
+    case "auto":
+    case "macos":
+    case "windows":
+    case "linux":
+      return value;
+    default:
+      throw new Error(
+        `Unsupported desktop platform: ${value}. Expected auto, macos, windows, or linux.`,
+      );
+  }
+}
+
 export function getPakeCommand(
   options: DesktopBuildOptions = {},
   configPath = sourceConfigPath,
   pakeCliPath = resolve(pakePackageRoot, "dist/cli.js"),
 ) {
   const platform = resolvePlatform(options.platform);
+  const targets = options.targets ?? defaultTargets[platform];
+  validateTargets(platform, targets);
   return [
     "bun",
     pakeCliPath,
@@ -87,46 +106,130 @@ export function getPakeCommand(
     "--app-version",
     normalizeVersion(options.version),
     "--targets",
-    options.targets ?? defaultTargets[platform],
+    targets,
     "--json",
   ];
 }
 
-function requestedFormats(platform: ResolvedDesktopPlatform, targets: string): string[] {
+function validateTargets(platform: ResolvedDesktopPlatform, targets: string): void {
+  if (platform === "macos") {
+    if (targets === "app" || targets === "universal") return;
+    throw new Error(
+      `Unsupported macOS desktop target: ${targets}. Expected app or universal.`,
+    );
+  }
+  if (platform === "windows") {
+    if (targets === "x64") return;
+    throw new Error(`Unsupported Windows desktop target: ${targets}. Expected x64.`);
+  }
+
+  for (const target of targets.split(",")) {
+    const normalizedTarget = target.trim().toLowerCase();
+    if (normalizedTarget !== "deb" && normalizedTarget !== "appimage") {
+      throw new Error(
+        `Unsupported Linux desktop target: ${target}. Expected deb or appimage.`,
+      );
+    }
+  }
+}
+
+function requestedFormats(
+  platform: ResolvedDesktopPlatform,
+  targets: string,
+): DesktopArtifactFormat[] {
+  validateTargets(platform, targets);
   if (platform === "macos") {
     return targets === "app" ? ["app"] : ["dmg"];
   }
   if (platform === "windows") return ["msi"];
-  return targets.split(",").map((target) => target.trim().toLowerCase());
+  return targets.split(",").map((target) =>
+    target.trim().toLowerCase() === "deb" ? "deb" : "appimage",
+  );
 }
 
 function normalizeFormat(format: string) {
   return format.toLowerCase().replace(/^\./, "");
 }
 
+function readString(record: Record<string, unknown>, key: string, context: string): string {
+  const value = record[key];
+  if (typeof value !== "string") throw new Error(`${context}.${key} must be a string`);
+  return value;
+}
+
+export function parsePakeResult(value: unknown): PakeResult {
+  if (!isRecord(value)) throw new Error("Pake result must be an object");
+  if (typeof value.ok !== "boolean") throw new Error("Pake result.ok must be a boolean");
+  if (!Array.isArray(value.outputs)) throw new Error("Pake result.outputs must be an array");
+  if (!Array.isArray(value.warnings) || !value.warnings.every((item) => typeof item === "string")) {
+    throw new Error("Pake result.warnings must contain only strings");
+  }
+
+  const outputs = value.outputs.map((output, index): PakeOutput => {
+    if (!isRecord(output)) throw new Error(`Pake result.outputs[${index}] must be an object`);
+    if (typeof output.sizeBytes !== "number" || !Number.isFinite(output.sizeBytes)) {
+      throw new Error(`Pake result.outputs[${index}].sizeBytes must be a finite number`);
+    }
+    return {
+      path: readString(output, "path", `Pake result.outputs[${index}]`),
+      sizeBytes: output.sizeBytes,
+      format: readString(output, "format", `Pake result.outputs[${index}]`),
+    };
+  });
+
+  let error: PakeResult["error"] = null;
+  if (value.error !== null && value.error !== undefined) {
+    if (!isRecord(value.error)) throw new Error("Pake result.error must be an object or null");
+    const hint = value.error.hint;
+    if (hint !== undefined && typeof hint !== "string") {
+      throw new Error("Pake result.error.hint must be a string when present");
+    }
+    error = {
+      code: readString(value.error, "code", "Pake result.error"),
+      message: readString(value.error, "message", "Pake result.error"),
+      ...(hint === undefined ? {} : { hint }),
+    };
+  }
+
+  return {
+    ok: value.ok,
+    name: readString(value, "name", "Pake result"),
+    platform: readString(value, "platform", "Pake result"),
+    arch: readString(value, "arch", "Pake result"),
+    outputs,
+    warnings: value.warnings,
+    error,
+  };
+}
+
 async function writeResolvedConfig(destination: string) {
-  const source = JSON.parse(await readFile(sourceConfigPath, "utf8")) as Record<string, unknown>;
-  source.icon = resolve(rootDir, String(source.icon));
-  source.inject = Array.isArray(source.inject)
-    ? source.inject.map((path) => resolve(rootDir, String(path)))
-    : [];
+  const parsedSource: unknown = JSON.parse(await readFile(sourceConfigPath, "utf8"));
+  if (!isRecord(parsedSource)) throw new Error("Pake config must be a JSON object");
+  if (typeof parsedSource.icon !== "string") throw new Error("Pake config icon must be a path");
+  if (
+    !Array.isArray(parsedSource.inject) ||
+    !parsedSource.inject.every((path) => typeof path === "string")
+  ) {
+    throw new Error("Pake config inject must contain only paths");
+  }
+
+  const source = {
+    ...parsedSource,
+    icon: resolve(rootDir, parsedSource.icon),
+    inject: parsedSource.inject.map((path) => resolve(rootDir, path)),
+  };
   await writeFile(destination, `${JSON.stringify(source, null, 2)}\n`);
 }
 
-async function preparePakeSource(outputDir: string) {
-  const destination = resolve(outputDir, patchedPakeDirectoryName);
-  await cp(pakePackageRoot, destination, { dereference: true, recursive: true });
-
-  const windowSourcePath = resolve(destination, "src-tauri/src/app/window.rs");
-  const originalWindowSource = await readFile(windowSourcePath, "utf8");
-  const originalMacImport = "use tauri::TitleBarStyle;";
-  const originalTitleBarSetup = `        let title_bar_style = if window_config.hide_title_bar {
+const originalMacImport = "use tauri::TitleBarStyle;";
+const originalTitleBarSetup = `        let title_bar_style = if window_config.hide_title_bar {
             TitleBarStyle::Overlay
         } else {
             TitleBarStyle::Visible
         };
         window_builder = window_builder.title_bar_style(title_bar_style);`;
 
+export function patchPakeWindowSource(originalWindowSource: string): string {
   if (
     !originalWindowSource.includes(originalMacImport) ||
     !originalWindowSource.includes(originalTitleBarSetup)
@@ -136,24 +239,24 @@ async function preparePakeSource(outputDir: string) {
     );
   }
 
-  const patchedWindowSource = originalWindowSource.replace(
+  return originalWindowSource.replace(
     originalTitleBarSetup,
     `        // The webview provides SMRY's own opaque title-bar canvas behind
         // native macOS controls. Pake's hideTitleBar flag stays false so its
         // broad immersive CSS is never injected into the product shell.
         window_builder = window_builder.title_bar_style(TitleBarStyle::Overlay);`,
   );
-  await writeFile(windowSourcePath, patchedWindowSource);
+}
 
-  const cargoManifestPath = resolve(destination, "src-tauri/Cargo.toml");
-  const originalCargoManifest = await readFile(cargoManifestPath, "utf8");
-  const featuresHeader = "[features]\n";
+const featuresHeader = "[features]\n";
+
+export function patchPakeCargoManifest(originalCargoManifest: string): string {
   if (!originalCargoManifest.includes(featuresHeader)) {
     throw new Error(
       `Pake ${PAKE_CLI_VERSION} Cargo features changed; refusing to apply the macOS proxy compatibility patch`,
     );
   }
-  const patchedCargoManifest = originalCargoManifest.includes(
+  return originalCargoManifest.includes(
     'macos-proxy = ["tauri/macos-proxy"]',
   )
     ? originalCargoManifest
@@ -161,7 +264,19 @@ async function preparePakeSource(outputDir: string) {
         featuresHeader,
         `${featuresHeader}macos-proxy = ["tauri/macos-proxy"]\n`,
       );
-  await writeFile(cargoManifestPath, patchedCargoManifest);
+}
+
+async function preparePakeSource(outputDir: string) {
+  const destination = resolve(outputDir, patchedPakeDirectoryName);
+  await cp(pakePackageRoot, destination, { dereference: true, recursive: true });
+
+  const windowSourcePath = resolve(destination, "src-tauri/src/app/window.rs");
+  const originalWindowSource = await readFile(windowSourcePath, "utf8");
+  await writeFile(windowSourcePath, patchPakeWindowSource(originalWindowSource));
+
+  const cargoManifestPath = resolve(destination, "src-tauri/Cargo.toml");
+  const originalCargoManifest = await readFile(cargoManifestPath, "utf8");
+  await writeFile(cargoManifestPath, patchPakeCargoManifest(originalCargoManifest));
 
   return resolve(destination, "dist/cli.js");
 }
@@ -196,7 +311,7 @@ export async function collectDesktopArtifacts(
         `Pake did not produce requested ${format} output. Produced: ${[...outputsByFormat.keys()].join(", ") || "none"}`,
       );
     }
-    const artifactName = desktopArtifactNames[format as keyof typeof desktopArtifactNames];
+    const artifactName = desktopArtifactNames[format];
     const destination = resolve(artifactsDir, artifactName);
     await copyOutput(output, destination);
     copied.push(destination);
@@ -239,9 +354,10 @@ async function runDesktopBuild(options: DesktopBuildOptions) {
 
   let result: PakeResult;
   try {
-    result = JSON.parse(stdout) as PakeResult;
-  } catch {
-    throw new Error(`Pake returned invalid JSON: ${stdout.slice(0, 500)}`);
+    result = parsePakeResult(JSON.parse(stdout));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Pake returned an invalid result (${detail}): ${stdout.slice(0, 500)}`);
   }
 
   if (exitCode !== 0 || !result.ok) {
@@ -271,7 +387,7 @@ function processEnv() {
   };
 }
 
-function parseArgs(argv: string[]): DesktopBuildOptions {
+export function parseDesktopBuildArgs(argv: string[]): DesktopBuildOptions {
   const options: DesktopBuildOptions = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -282,7 +398,7 @@ function parseArgs(argv: string[]): DesktopBuildOptions {
       return value;
     };
 
-    if (arg === "--platform") options.platform = next() as DesktopPlatform;
+    if (arg === "--platform") options.platform = parseDesktopPlatform(next());
     else if (arg === "--version") options.version = next();
     else if (arg === "--targets") options.targets = next();
     else if (arg === "--output") options.outputDir = next();
@@ -299,7 +415,7 @@ function parseArgs(argv: string[]): DesktopBuildOptions {
 }
 
 if (import.meta.main) {
-  runDesktopBuild(parseArgs(process.argv.slice(2))).catch((error) => {
+  runDesktopBuild(parseDesktopBuildArgs(process.argv.slice(2))).catch((error) => {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   });

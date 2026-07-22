@@ -8,42 +8,6 @@ const isSmryDesktopMacos =
 
 if (isSmryDesktopMacos) {
   document.documentElement.dataset.smryDesktopMacos = "true";
-  const titlebarStyle = document.createElement("style");
-  titlebarStyle.id = "smry-desktop-titlebar";
-  titlebarStyle.textContent = `
-  html[data-smry-desktop-macos] {
-    --smry-desktop-titlebar-height: 32px;
-    background: var(--sidebar);
-  }
-
-  html[data-smry-desktop-macos] body {
-    box-sizing: border-box !important;
-    height: 100dvh !important;
-    min-height: 100dvh !important;
-    overflow: hidden !important;
-    padding-top: var(--smry-desktop-titlebar-height) !important;
-  }
-
-  html[data-smry-desktop-macos] body::before {
-    content: "";
-    position: fixed;
-    z-index: 2147483646;
-    inset: 0 0 auto;
-    height: var(--smry-desktop-titlebar-height);
-    background: var(--sidebar);
-    pointer-events: none;
-  }
-
-  html[data-smry-desktop-macos] [data-app-frame] {
-    height: calc(100dvh - var(--smry-desktop-titlebar-height)) !important;
-    min-height: calc(100dvh - var(--smry-desktop-titlebar-height)) !important;
-  }
-
-  html[data-smry-desktop-macos] [data-app-sidebar] {
-    height: 100% !important;
-  }
-`;
-  (document.head ?? document.documentElement).append(titlebarStyle);
 }
 
 function resetSmryDesktopZoom() {
