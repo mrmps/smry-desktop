@@ -14,6 +14,7 @@ import {
   desktopReleaseManifest,
   parseDesktopReleaseManifest,
 } from "../scripts/desktop-release-manifest";
+import { hasProductionDesktopShellContract } from "../scripts/check-production-desktop-shell";
 
 const root = join(import.meta.dir, "..");
 const config = JSON.parse(
@@ -127,6 +128,12 @@ describe("SMRY desktop shell", () => {
         artifacts: { ...desktopReleaseManifest.artifacts, msi: "../unsafe.msi" },
       }),
     ).toThrow("must be a plain filename");
+    expect(() =>
+      parseDesktopReleaseManifest({
+        ...desktopReleaseManifest,
+        artifacts: { ...desktopReleaseManifest.artifacts, msi: ".." },
+      }),
+    ).toThrow("must be a plain filename");
   });
 
   test("rejects unsupported CLI platforms before constructing a Pake command", () => {
@@ -190,5 +197,13 @@ describe("SMRY desktop shell", () => {
     expect(releaseWorkflow).toContain("desktop-release-manifest.json");
     expect(releaseWorkflow).toContain("git/refs/tags/${RELEASE_TAG}");
     expect(releaseWorkflow).toContain('--target "$GITHUB_SHA"');
+    expect(releaseWorkflow).toContain("check-production-desktop-shell.ts");
+    expect(
+      hasProductionDesktopShellContract([
+        "html[data-smry-desktop-macos]{--smry-desktop-titlebar-height:32px}" +
+          '[data-app-frame-mode="fixed"]{height:100%}',
+      ]),
+    ).toBeTrue();
+    expect(hasProductionDesktopShellContract(["body{height:100%}"])).toBeFalse();
   });
 });

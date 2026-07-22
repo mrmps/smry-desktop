@@ -29,7 +29,9 @@ bun run desktop:build -- --platform macos --targets app --version 0.1.0
 ```
 
 Pushes that change the packaging source build all supported operating systems
-and replace the stable `desktop-latest` release assets.
+and replace the stable `desktop-latest` release assets. Publishing waits for the
+companion production web shell to expose the marker-based desktop layout
+contract, so a selector-free wrapper cannot ship before its live CSS.
 
 SMRY Desktop loads the live SMRY web app. Web features update with the site;
 native wrapper changes require downloading a newer installer.

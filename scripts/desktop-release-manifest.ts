@@ -25,6 +25,8 @@ function readArtifactFileName(
   if (
     typeof fileName !== "string" ||
     fileName.length === 0 ||
+    fileName === "." ||
+    fileName === ".." ||
     basename(fileName) !== fileName
   ) {
     throw new Error(`Desktop release artifact ${format} must be a plain filename`);

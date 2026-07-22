@@ -8,6 +8,7 @@ on:
       - "desktop/**"
       - "public/brand/smry-logo-mark.png"
       - "scripts/build-desktop-app.ts"
+      - "scripts/check-production-desktop-shell.ts"
       - "scripts/desktop-release-manifest.ts"
       - "scripts/pake-bin/**"
       - ".github/workflows/release-desktop-app.yml"
@@ -35,6 +36,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -69,6 +72,20 @@ jobs:
       - name: Test desktop shell contract
         run: bun test
 
+      - name: Wait for the live web shell contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          until bun scripts/check-production-desktop-shell.ts; do
+            if (( SECONDS >= deadline )); then
+              echo "The live web shell did not expose the desktop layout contract in time." >&2
+              exit 1
+            fi
+            echo "Waiting for the companion web deployment..."
+            sleep 15
+          done
+
   build:
     name: Build ${{ matrix.label }}
     needs: prepare
@@ -96,6 +113,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -174,6 +193,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Download installers
         uses: actions/download-artifact@v8
