@@ -3,7 +3,10 @@
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { desktopReleaseManifest } from "./desktop-release-manifest";
+import {
+  desktopReleaseManifest,
+  isRecord,
+} from "./desktop-release-manifest";
 
 export const PAKE_CLI_VERSION = "3.15.1";
 
@@ -148,10 +151,6 @@ function normalizeFormat(format: string) {
   return format.toLowerCase().replace(/^\./, "");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function readString(record: Record<string, unknown>, key: string, context: string): string {
   const value = record[key];
   if (typeof value !== "string") throw new Error(`${context}.${key} must be a string`);
@@ -179,7 +178,7 @@ export function parsePakeResult(value: unknown): PakeResult {
   });
 
   let error: PakeResult["error"] = null;
-  if (value.error !== null) {
+  if (value.error !== null && value.error !== undefined) {
     if (!isRecord(value.error)) throw new Error("Pake result.error must be an object or null");
     const hint = value.error.hint;
     if (hint !== undefined && typeof hint !== "string") {

@@ -173,6 +173,16 @@ describe("SMRY desktop shell", () => {
         error: null,
       }),
     ).toThrow("Pake result.outputs must be an array");
+    expect(
+      parsePakeResult({
+        ok: true,
+        name: "SMRY",
+        platform: "macos",
+        arch: "universal",
+        outputs: [],
+        warnings: [],
+      }).error,
+    ).toBeNull();
   });
 
   test("publishes the manifest and moves the stable tag to the exact build", () => {
