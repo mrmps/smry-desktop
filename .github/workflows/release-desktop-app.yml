@@ -8,6 +8,7 @@ on:
       - "desktop/**"
       - "public/brand/smry-logo-mark.png"
       - "scripts/build-desktop-app.ts"
+      - "scripts/desktop-release-manifest.ts"
       - "scripts/pake-bin/**"
       - ".github/workflows/release-desktop-app.yml"
   workflow_dispatch:
@@ -29,6 +30,7 @@ jobs:
     name: Prepare release
     runs-on: ubuntu-latest
     outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out repository
@@ -55,6 +57,14 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release contract
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="$(bun -e 'import { desktopReleaseManifest } from "./scripts/desktop-release-manifest.ts"; process.stdout.write(desktopReleaseManifest.releaseTag)')"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
 
       - name: Test desktop shell contract
         run: bun test
@@ -114,7 +124,7 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             dist/desktop-pake-target
-          key: desktop-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('bun.lock', 'desktop/pake.json', 'desktop/smry-desktop.js', 'scripts/build-desktop-app.ts', 'scripts/pake-bin/**') }}
+          key: desktop-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('bun.lock', 'desktop/pake.json', 'desktop/release-manifest.json', 'desktop/smry-desktop.js', 'scripts/build-desktop-app.ts', 'scripts/desktop-release-manifest.ts', 'scripts/pake-bin/**') }}
           restore-keys: desktop-${{ runner.os }}-${{ matrix.platform }}-
 
       - name: Install Linux build dependencies
@@ -159,14 +169,21 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: desktop-latest
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
       - name: Download installers
         uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Include release contract
+        shell: bash
+        run: cp desktop/release-manifest.json release-assets/desktop-release-manifest.json
 
       - name: Publish stable release assets
         shell: bash
@@ -178,9 +195,11 @@ jobs:
 
           A lightweight desktop wrapper for [smry.ai](https://smry.ai), built with [Pake](https://github.com/tw93/Pake) and the operating system webview.
 
-          - macOS: \`SMRY-macOS-universal.dmg\`
-          - Windows: \`SMRY-Windows-x64.msi\`
-          - Linux: \`SMRY-Linux-x64.AppImage\` or \`SMRY-Linux-x64.deb\`
+          - macOS: universal DMG
+          - Windows: x64 MSI
+          - Linux: x64 AppImage and DEB
+
+          The attached \`desktop-release-manifest.json\` is the machine-readable filename contract used by the build and website.
 
           These early-access installers are not yet signed by a verified publisher or notarized, so the operating system may ask for confirmation before opening them. The web app updates automatically; install a newer package from this release when the native wrapper changes.
 
