@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import {
+  configurePakeMacosSigning,
   desktopArtifactNames,
   getPakeCommand,
   parseDesktopBuildArgs,
@@ -15,6 +16,10 @@ import {
   parseDesktopReleaseManifest,
 } from "../scripts/desktop-release-manifest";
 import { hasProductionDesktopShellContract } from "../scripts/check-production-desktop-shell";
+import {
+  findMacosAppBundle,
+  parseNotarytoolSubmission,
+} from "../scripts/notarize-macos-release";
 
 const root = join(import.meta.dir, "..");
 const config = JSON.parse(
@@ -111,6 +116,30 @@ describe("SMRY desktop shell", () => {
     expect(patchPakeCargoManifest(cargoManifest)).toContain(
       'macos-proxy = ["tauri/macos-proxy"]',
     );
+
+    const macosConfig = JSON.parse(
+      readFileSync(
+        join(root, "node_modules/pake-cli/src-tauri/tauri.macos.conf.json"),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    expect(
+      configurePakeMacosSigning(
+        macosConfig,
+        "Developer ID Application: SMRY, Inc. (ABCDE12345)",
+      ),
+    ).toMatchObject({
+      bundle: {
+        macOS: {
+          hardenedRuntime: true,
+          signingIdentity:
+            "Developer ID Application: SMRY, Inc. (ABCDE12345)",
+        },
+      },
+    });
+    expect(() =>
+      configurePakeMacosSigning(macosConfig, "Apple Development: SMRY"),
+    ).toThrow("must be a Developer ID Application identity");
   });
 
   test("owns distributed artifact names in one validated release manifest", () => {
@@ -198,6 +227,9 @@ describe("SMRY desktop shell", () => {
     expect(releaseWorkflow).toContain("git/refs/tags/${RELEASE_TAG}");
     expect(releaseWorkflow).toContain('--target "$GITHUB_SHA"');
     expect(releaseWorkflow).toContain("check-production-desktop-shell.ts");
+    expect(releaseWorkflow).toContain("APPLE_CERTIFICATE");
+    expect(releaseWorkflow).toContain("desktop:notarize");
+    expect(releaseWorkflow).toContain("APPLE_TEAM_ID");
     expect(
       hasProductionDesktopShellContract([
         "html[data-smry-desktop-macos]{--smry-desktop-titlebar-height:32px}" +
@@ -205,5 +237,24 @@ describe("SMRY desktop shell", () => {
       ]),
     ).toBeTrue();
     expect(hasProductionDesktopShellContract(["body{height:100%}"])).toBeFalse();
+  });
+
+  test("requires an accepted Apple submission and one mounted app bundle", () => {
+    expect(
+      parseNotarytoolSubmission({
+        id: "2efe2717-52ef-43a5-96dc-0797e4ca1041",
+        status: "Accepted",
+      }),
+    ).toEqual({
+      id: "2efe2717-52ef-43a5-96dc-0797e4ca1041",
+      status: "Accepted",
+    });
+    expect(() =>
+      parseNotarytoolSubmission({ id: "submission", status: "Invalid" }),
+    ).toThrow("did not return an Accepted submission");
+    expect(findMacosAppBundle(["Applications", "SMRY.app"])).toBe("SMRY.app");
+    expect(() =>
+      findMacosAppBundle(["SMRY.app", "Unexpected.app"]),
+    ).toThrow("Expected one app bundle");
   });
 });
