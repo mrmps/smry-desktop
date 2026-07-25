@@ -266,6 +266,34 @@ export function patchPakeCargoManifest(originalCargoManifest: string): string {
       );
 }
 
+export function configurePakeMacosSigning(
+  config: unknown,
+  signingIdentity: string | undefined,
+) {
+  if (!isRecord(config) || !isRecord(config.bundle) || !isRecord(config.bundle.macOS)) {
+    throw new Error("Pake macOS config must define bundle.macOS");
+  }
+
+  const normalizedIdentity = signingIdentity?.trim();
+  if (!normalizedIdentity) return config;
+  if (!normalizedIdentity.startsWith("Developer ID Application: ")) {
+    throw new Error(
+      "APPLE_SIGNING_IDENTITY must be a Developer ID Application identity",
+    );
+  }
+
+  return {
+    ...config,
+    bundle: {
+      ...config.bundle,
+      macOS: {
+        ...config.bundle.macOS,
+        signingIdentity: normalizedIdentity,
+      },
+    },
+  };
+}
+
 async function preparePakeSource(outputDir: string) {
   const destination = resolve(outputDir, patchedPakeDirectoryName);
   await cp(pakePackageRoot, destination, { dereference: true, recursive: true });
@@ -277,6 +305,17 @@ async function preparePakeSource(outputDir: string) {
   const cargoManifestPath = resolve(destination, "src-tauri/Cargo.toml");
   const originalCargoManifest = await readFile(cargoManifestPath, "utf8");
   await writeFile(cargoManifestPath, patchPakeCargoManifest(originalCargoManifest));
+
+  const macosConfigPath = resolve(destination, "src-tauri/tauri.macos.conf.json");
+  const macosConfig: unknown = JSON.parse(await readFile(macosConfigPath, "utf8"));
+  const configuredMacosConfig = configurePakeMacosSigning(
+    macosConfig,
+    process.env.APPLE_SIGNING_IDENTITY,
+  );
+  await writeFile(
+    macosConfigPath,
+    `${JSON.stringify(configuredMacosConfig, null, 2)}\n`,
+  );
 
   return resolve(destination, "dist/cli.js");
 }
