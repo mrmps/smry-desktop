@@ -50,6 +50,7 @@ accidental zoom cannot leave future launches compressed or clipped.
 On macOS, the live app reaches the top edge of the overlay-title-bar window
 instead of reserving an empty strip across the full viewport. The expanded
 sidebar protects the native traffic-light controls with a narrow horizontal
-safe zone; only a collapsed rail reserves their vertical space. The live web
-stylesheet owns this geometry so installed apps follow theme and layout changes
-without freezing web selectors into a released native binary.
+safe zone, and the native window title is hidden so it cannot duplicate the web
+brand. Only a collapsed rail reserves the controls' vertical space. The live
+web stylesheet owns this geometry so installed apps follow theme and layout
+changes without freezing web selectors into a released native binary.

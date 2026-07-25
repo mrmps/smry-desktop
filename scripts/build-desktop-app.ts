@@ -244,7 +244,9 @@ export function patchPakeWindowSource(originalWindowSource: string): string {
     `        // The webview provides SMRY's own opaque title-bar canvas behind
         // native macOS controls. Pake's hideTitleBar flag stays false so its
         // broad immersive CSS is never injected into the product shell.
-        window_builder = window_builder.title_bar_style(TitleBarStyle::Overlay);`,
+        window_builder = window_builder
+            .title_bar_style(TitleBarStyle::Overlay)
+            .hidden_title(true);`,
   );
 }
 

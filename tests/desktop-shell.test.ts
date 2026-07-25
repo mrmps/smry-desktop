@@ -110,9 +110,11 @@ describe("SMRY desktop shell", () => {
       join(root, "node_modules/pake-cli/src-tauri/Cargo.toml"),
       "utf8",
     );
-    expect(patchPakeWindowSource(windowSource)).toContain(
+    const patchedWindowSource = patchPakeWindowSource(windowSource);
+    expect(patchedWindowSource).toContain(
       "title_bar_style(TitleBarStyle::Overlay)",
     );
+    expect(patchedWindowSource).toContain(".hidden_title(true)");
     expect(patchPakeCargoManifest(cargoManifest)).toContain(
       'macos-proxy = ["tauri/macos-proxy"]',
     );
