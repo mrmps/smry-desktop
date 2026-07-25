@@ -47,8 +47,9 @@ classes in the live app. A narrow bootstrap marks the webview as SMRY Desktop
 and resets Pake's persisted `htmlZoom` value to 100% on every page load so an
 accidental zoom cannot leave future launches compressed or clipped.
 
-On macOS, the wrapper keeps the native traffic-light controls above a reserved
-32px title-bar canvas painted with SMRY's live `--sidebar` design token. The
-live web stylesheet subtracts the same height from the app frame, so installed
-apps follow theme and layout changes without freezing web selectors into a
-released native binary.
+On macOS, the live app reaches the top edge of the overlay-title-bar window
+instead of reserving an empty strip across the full viewport. The expanded
+sidebar protects the native traffic-light controls with a narrow horizontal
+safe zone; only a collapsed rail reserves their vertical space. The live web
+stylesheet owns this geometry so installed apps follow theme and layout changes
+without freezing web selectors into a released native binary.

@@ -232,10 +232,19 @@ describe("SMRY desktop shell", () => {
     expect(releaseWorkflow).toContain("APPLE_TEAM_ID");
     expect(
       hasProductionDesktopShellContract([
+        "html[data-smry-desktop-macos]{" +
+          "--smry-desktop-titlebar-height:32px;" +
+          "--smry-desktop-traffic-light-safe-width:76px}" +
+          '[data-collapsed="false"] [data-sidebar-header]{' +
+          "padding-left:var(--smry-desktop-traffic-light-safe-width)}",
+      ]),
+    ).toBeTrue();
+    expect(
+      hasProductionDesktopShellContract([
         "html[data-smry-desktop-macos]{--smry-desktop-titlebar-height:32px}" +
           '[data-app-frame-mode="fixed"]{height:100%}',
       ]),
-    ).toBeTrue();
+    ).toBeFalse();
     expect(hasProductionDesktopShellContract(["body{height:100%}"])).toBeFalse();
   });
 
