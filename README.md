@@ -13,8 +13,9 @@ Download the current early-access installers from the stable
 - Linux x64 AppImage
 - Debian / Ubuntu x64 DEB
 
-These packages are not yet signed by a verified publisher or notarized, so the
-operating system may ask for confirmation before opening them.
+The macOS disk image is signed with Developer ID, notarized by Apple, and
+includes a stapled notarization ticket. The Windows installer is not yet
+code-signed, so Windows may ask for confirmation before opening it.
 
 ## Build
 
@@ -32,6 +33,10 @@ Pushes that change the packaging source build all supported operating systems
 and replace the stable `desktop-latest` release assets. Publishing waits for the
 companion production web shell to expose the marker-based desktop layout
 contract, so a selector-free wrapper cannot ship before its live CSS.
+The macOS job imports its Developer ID certificate into an ephemeral keychain,
+enables Tauri's hardened-runtime signature, submits the signed disk image to
+Apple, staples the accepted ticket, and verifies the disk image and embedded
+app with `codesign`, `stapler`, and Gatekeeper before publishing.
 
 SMRY Desktop loads the live SMRY web app. Web features update with the site;
 native wrapper changes require downloading a newer installer.
