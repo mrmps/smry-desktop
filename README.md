@@ -13,8 +13,9 @@ Download the current early-access installers from the stable
 - Linux x64 AppImage
 - Debian / Ubuntu x64 DEB
 
-These packages are not yet signed by a verified publisher or notarized, so the
-operating system may ask for confirmation before opening them.
+The macOS disk image is signed with Developer ID, notarized by Apple, and
+includes a stapled notarization ticket. The Windows installer is not yet
+code-signed, so Windows may ask for confirmation before opening it.
 
 ## Build
 
@@ -32,6 +33,10 @@ Pushes that change the packaging source build all supported operating systems
 and replace the stable `desktop-latest` release assets. Publishing waits for the
 companion production web shell to expose the marker-based desktop layout
 contract, so a selector-free wrapper cannot ship before its live CSS.
+The macOS job imports its Developer ID certificate into an ephemeral keychain,
+enables Tauri's hardened-runtime signature, submits the signed disk image to
+Apple, staples the accepted ticket, and verifies the disk image and embedded
+app with `codesign`, `stapler`, and Gatekeeper before publishing.
 
 SMRY Desktop loads the live SMRY web app. Web features update with the site;
 native wrapper changes require downloading a newer installer.
@@ -42,8 +47,10 @@ classes in the live app. A narrow bootstrap marks the webview as SMRY Desktop
 and resets Pake's persisted `htmlZoom` value to 100% on every page load so an
 accidental zoom cannot leave future launches compressed or clipped.
 
-On macOS, the wrapper keeps the native traffic-light controls above a reserved
-32px title-bar canvas painted with SMRY's live `--sidebar` design token. The
-live web stylesheet subtracts the same height from the app frame, so installed
-apps follow theme and layout changes without freezing web selectors into a
-released native binary.
+On macOS, the live app reaches the top edge of the overlay-title-bar window
+instead of reserving an empty strip across the full viewport. The expanded
+sidebar protects the native traffic-light controls with a narrow horizontal
+safe zone, and the native window title is hidden so it cannot duplicate the web
+brand. Only a collapsed rail reserves the controls' vertical space. The live
+web stylesheet owns this geometry so installed apps follow theme and layout
+changes without freezing web selectors into a released native binary.

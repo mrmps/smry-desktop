@@ -6,8 +6,8 @@ export function hasProductionDesktopShellContract(stylesheets: string[]): boolea
   const combinedStyles = stylesheets.join("\n");
   return (
     combinedStyles.includes("data-smry-desktop-macos") &&
-    combinedStyles.includes("--smry-desktop-titlebar-height") &&
-    combinedStyles.includes("data-app-frame-mode")
+    combinedStyles.includes("--smry-desktop-traffic-light-safe-width") &&
+    combinedStyles.includes("data-sidebar-header")
   );
 }
 

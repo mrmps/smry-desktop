@@ -90,7 +90,7 @@ jobs:
     name: Build ${{ matrix.label }}
     needs: prepare
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -134,6 +134,52 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
+      - name: Import Apple Developer ID certificate
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$APPLE_CERTIFICATE" || -z "$APPLE_CERTIFICATE_PASSWORD" ]]; then
+            echo "APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD are required." >&2
+            exit 1
+          fi
+
+          certificate_path="$RUNNER_TEMP/smry-developer-id.p12"
+          keychain_path="$RUNNER_TEMP/smry-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+
+          printf '%s' "$APPLE_CERTIFICATE" |
+            openssl base64 -d -A -out "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" \
+            -k "$keychain_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -d user -s "$keychain_path"
+
+          signing_identity="$(
+            security find-identity -v -p codesigning "$keychain_path" |
+              awk -F'"' '/Developer ID Application:/ { print $2; exit }'
+          )"
+          if [[ -z "$signing_identity" ]]; then
+            echo "The certificate does not contain a valid Developer ID Application identity." >&2
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+          rm "$certificate_path"
+
       - name: Cache Pake dependencies
         uses: actions/cache@v5
         with:
@@ -171,6 +217,17 @@ jobs:
           bun run desktop:build -- \
             --platform "${{ matrix.platform }}" \
             --version "${{ needs.prepare.outputs.version }}"
+
+      - name: Notarize and verify macOS disk image
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          bun run desktop:notarize -- \
+            "dist/desktop-artifacts/SMRY-macOS-universal.dmg"
 
       - name: Upload installers
         uses: actions/upload-artifact@v7
@@ -216,13 +273,13 @@ jobs:
 
           A lightweight desktop wrapper for [smry.ai](https://smry.ai), built with [Pake](https://github.com/tw93/Pake) and the operating system webview.
 
-          - macOS: universal DMG
+          - macOS: Developer ID signed and Apple-notarized universal DMG
           - Windows: x64 MSI
           - Linux: x64 AppImage and DEB
 
           The attached \`desktop-release-manifest.json\` is the machine-readable filename contract used by the build and website.
 
-          These early-access installers are not yet signed by a verified publisher or notarized, so the operating system may ask for confirmation before opening them. The web app updates automatically; install a newer package from this release when the native wrapper changes.
+          The macOS disk image is signed with Developer ID, notarized by Apple, and carries a stapled notarization ticket. The Windows installer is not yet code-signed, so Windows may ask for confirmation before opening it. The web app updates automatically; install a newer package from this release when the native wrapper changes.
 
           Built from [${GITHUB_SHA}](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}) with Pake CLI 3.15.1.
           EOF

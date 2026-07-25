@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "desktop:build": "bun scripts/build-desktop-app.ts",
+    "desktop:notarize": "bun scripts/notarize-macos-release.ts",
     "test": "bun test"
   },
   "devDependencies": {
